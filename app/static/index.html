@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏢 Company AI Assistant</title>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Link CSS -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="glow-bg"></div>
+    
+    <div class="app-container">
+        <!-- Sidebar for document ingestion -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>📁 Company Docs</h2>
+                <p>Upload PDFs to teach the AI new policies dynamically</p>
+            </div>
+            
+            <div class="upload-zone" id="upload-zone">
+                <div class="upload-icon">📤</div>
+                <div class="upload-text">Drag & drop policy PDF or <span>browse</span></div>
+                <input type="file" id="pdf-input" accept=".pdf" style="display: none;">
+            </div>
+            
+            <div class="status-panel" id="status-panel">
+                <div class="status-title">System Status</div>
+                <div class="status-item">
+                    <span class="status-dot online"></span>
+                    <span class="status-label">LLM: GPT-4o-Mini (Active)</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-dot online"></span>
+                    <span class="status-label">Memory: InMemoryHistory</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-dot online"></span>
+                    <span class="status-label">Vector DB: Chroma DB</span>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <header class="chat-header">
+                <div class="header-info">
+                    <h1>🏢 Company AI Assistant</h1>
+                    <p>Powered by LangChain, LangGraph, and RAG</p>
+                </div>
+                <button class="clear-btn" id="clear-btn">Clear History</button>
+            </header>
+            
+            <!-- Message List -->
+            <section class="messages-container" id="messages-container">
+                <div class="message assistant animate-fade-in">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        Hello! I am your <strong>Company AI Assistant</strong>. I can chat with you, remember our context, perform calculations, fetch weather data, and retrieve details from uploaded company policy documents.
+                        <br><br>
+                        How can I help you today?
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Input Area -->
+            <footer class="chat-footer">
+                <div class="typing-indicator" id="typing-indicator" style="display: none;">
+                    <span></span><span></span><span></span>
+                </div>
+                <form id="chat-form" class="chat-form">
+                    <input type="text" id="chat-input" placeholder="Ask about calculations, weather, or company policies..." autocomplete="off" required>
+                    <button type="submit" class="send-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </form>
+            </footer>
+        </main>
+    </div>
+    
+    <!-- JavaScript Logic -->
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const messagesContainer = document.getElementById('messages-container');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const uploadZone = document.getElementById('upload-zone');
+        const pdfInput = document.getElementById('pdf-input');
+        const clearBtn = document.getElementById('clear-btn');
+        
+        let threadMessages = []; // Local history tracking for UI rendering if needed
+        const threadId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+        // Add a message bubble to UI
+        function appendMessage(sender, text, isMarkdown = false) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender} animate-fade-in`;
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.innerText = sender === 'user' ? '👤' : '🤖';
+            
+            const content = document.createElement('div');
+            content.className = 'message-content';
+            
+            if (isMarkdown) {
+                // Quick simple custom markdown-to-HTML parser for basic formatting
+                let formatted = text
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/\`([\s\S]*?)\`/g, '<code>$1</code>')
+                    .replace(/\n/g, '<br>');
+                content.innerHTML = formatted;
+            } else {
+                content.textContent = text;
+            }
+            
+            msgDiv.appendChild(avatar);
+            msgDiv.appendChild(content);
+            messagesContainer.appendChild(msgDiv);
+            
+            // Auto scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Show/hide typing bubble
+        function setTyping(isTyping) {
+            typingIndicator.style.display = isTyping ? 'flex' : 'none';
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Handle text submission
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+            
+            chatInput.value = '';
+            appendMessage('user', text);
+            setTyping(true);
+            
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: text, thread_id: threadId })
+                });
+                
+                const data = await response.json();
+                setTyping(false);
+                
+                if (data.status === 'success') {
+                    // Show intermediate steps (RAG / Tool calls) in a minor console-like badge if they happened
+                    if (data.steps && data.steps.length > 0) {
+                        data.steps.forEach(step => {
+                            const badge = document.createElement('div');
+                            badge.className = 'execution-badge animate-fade-in';
+                            badge.textContent = `⚙️ ${step}`;
+                            messagesContainer.appendChild(badge);
+                        });
+                    }
+                    appendMessage('assistant', data.response, true);
+                } else {
+                    appendMessage('assistant', `⚠️ Error: ${data.message || 'Unknown error occurred'}`);
+                }
+            } catch (err) {
+                setTyping(false);
+                appendMessage('assistant', `❌ Connection error: Could not reach backend server.`);
+            }
+        });
+
+        // Trigger file browse on upload zone click
+        uploadZone.addEventListener('click', () => pdfInput.click());
+
+        // File drag and drop visual handlers
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].name.endsWith('.pdf')) {
+                uploadPDF(files[0]);
+            }
+        });
+
+        pdfInput.addEventListener('change', () => {
+            if (pdfInput.files.length > 0) {
+                uploadPDF(pdfInput.files[0]);
+            }
+        });
+
+        // Async upload PDF function
+        async function uploadPDF(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // Show ingestion log in chat
+            const uploadMsgId = Date.now();
+            appendMessage('assistant', `📤 Uploading "${file.name}" and starting RAG ingestion...`);
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    appendMessage('assistant', `✅ Successfully ingested "${file.name}"! Loaded ${data.chunks} chunks into Chroma Vector DB. You can now ask questions about this policy.`);
+                } else {
+                    appendMessage('assistant', `❌ Failed to ingest "${file.name}": ${data.message}`);
+                }
+            } catch (err) {
+                appendMessage('assistant', `❌ Connection error occurred while uploading file.`);
+            }
+        }
+
+        // Clear history call
+        clearBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/clear', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ thread_id: threadId })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    messagesContainer.innerHTML = '';
+                    appendMessage('assistant', '🧹 Conversation history has been cleared.');
+                }
+            } catch (err) {
+                console.error("Could not clear history", err);
+            }
+        });
+    </script>
+</body>
+</html>
