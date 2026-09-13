@@ -1,7 +1,7 @@
 import os
 import shutil
 import uuid
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,30 +11,31 @@ from dotenv import load_dotenv
 # LangChain message modules
 from langchain_core.messages import HumanMessage
 
-# LangGraph Memory Saver checkpointing
-from langgraph.checkpoint.memory import MemorySaver
-
 # Import our custom RAG and Graph Workflow builders
 from app.graph.workflow import create_workflow
 from app.rag.loader import load_pdf
 from app.rag.splitter import split_documents
 from app.rag.vectorstore import add_documents_to_store
 
+# Auth dependencies
+from app.auth.middleware import get_current_user
+
+# Custom MongoDB checkpointer
+from app.graph.checkpointer import AsyncMongoDBSaver
+from motor.motor_asyncio import AsyncIOMotorClient
+
 # 1. Initialize environment variables
 load_dotenv()
 
-# 2. Compile our LangGraph state machine with MemorySaver
-# MemorySaver stores conversation threads in RAM, giving us automatic checkpointer state history.
-memory_saver = MemorySaver()
-graph_app = create_workflow(checkpointer=memory_saver)
+# 2. Compile our LangGraph state machine with MongoDBSaver
+mongo_client = AsyncIOMotorClient(os.getenv("MONGODB_URI"))
+mongodb_saver = AsyncMongoDBSaver(mongo_client)
+graph_app = create_workflow(checkpointer=mongodb_saver)
 
 # 3. Initialize FastAPI
 app = FastAPI(title="🏢 AI Operations Command Center")
 
-# 3b. CORS Middleware — allows the React frontend (port 5173) to call the FastAPI backend (port 8000)
-# Educational Comment:
-# Without CORS, the browser blocks requests from localhost:5173 to localhost:8000
-# because they are different "origins". This middleware explicitly allows it.
+# 3b. CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -70,19 +71,7 @@ app.include_router(ai_router)
 app.include_router(chats_router)
 app.include_router(approvals_router)
 
-# 4. Session Manager
-# We maintain a dynamic thread ID that we can reset to "clear" history.
-class SessionManager:
-    def __init__(self):
-        self.thread_id = str(uuid.uuid4())
-    
-    def reset(self):
-        self.thread_id = str(uuid.uuid4())
-
-session = SessionManager()
-
 # 5. Serve Static UI Assets
-# Mount the static directory so the page can fetch style.css and index.html
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # 6. Serving HTML Front-end UI at the root "/"
@@ -101,48 +90,41 @@ class ChatRequest(BaseModel):
 
 # 8. API Endpoint: Send Chat Message
 @app.post("/api/chat")
-async def chat_endpoint(req: ChatRequest):
+async def chat_endpoint(req: ChatRequest, user: dict = Depends(get_current_user)):
     try:
         query_text = req.query.strip()
         if not query_text:
             raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-        # Configuration dictionary containing the current session's thread ID
-        # Default to a generic session if not provided by the client
-        current_thread_id = req.thread_id if req.thread_id else session.thread_id
-        config = {"configurable": {"thread_id": current_thread_id}}
+        # Secure isolation: thread_id is scoped to the authenticated user ID.
+        # This acts as an implicit thread ownership verification.
+        base_thread_id = req.thread_id if req.thread_id else str(uuid.uuid4())
+        secure_thread_id = f"{user['user_id']}::{base_thread_id}"
+        config = {"configurable": {"thread_id": secure_thread_id}}
         
-        # Accumulate execution trace steps for UI dashboard feedback
         steps = []
         
-        # Run the workflow asynchronously and stream updates at node transitions
-        # input_state adds the new user message to the thread history
+        # Run workflow
         input_state = {"messages": [HumanMessage(content=query_text)]}
-        
         async for event in graph_app.astream(input_state, config=config, stream_mode="updates"):
             for node_name, node_update in event.items():
                 if node_name == "retrieve":
-                    # The RAG retriever node was executed
                     doc_count = len(node_update.get("context", []))
                     steps.append(f"RAG: Retrieved {doc_count} document chunks from Chroma DB.")
                 elif node_name == "tools":
-                    # The tools executor node was executed
-                    steps.append("Tools: Executed calculations or weather checks.")
+                    steps.append("Tools: Executed tools.")
                 elif node_name == "agent":
-                    # The LLM model was invoked
                     steps.append("LLM: Agent generated response reasoning step.")
 
         # Retrieve the final consolidated state from the checkpointer
-        final_state = graph_app.get_state(config)
+        final_state = await graph_app.aget_state(config)
         final_messages = final_state.values.get("messages", [])
         
         if not final_messages:
             raise HTTPException(status_code=500, detail="No response generated by the agent.")
             
-        # The last message in the state represents the final AIMessage output
         raw_content = final_messages[-1].content
         if isinstance(raw_content, list):
-            # Extract text from the list of message parts (common with Google GenAI models)
             final_response = "".join([part.get("text", "") for part in raw_content if isinstance(part, dict) and "text" in part])
         else:
             final_response = str(raw_content)
@@ -150,9 +132,12 @@ async def chat_endpoint(req: ChatRequest):
         return {
             "status": "success",
             "response": final_response,
-            "steps": steps
+            "steps": steps,
+            "thread_id": base_thread_id
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         return {
             "status": "error",
@@ -161,7 +146,7 @@ async def chat_endpoint(req: ChatRequest):
 
 # 9. API Endpoint: Ingest & Upload PDF for RAG
 @app.post("/api/upload")
-async def upload_endpoint(file: UploadFile = File(...)):
+async def upload_endpoint(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     try:
         if not file.filename.endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -169,17 +154,11 @@ async def upload_endpoint(file: UploadFile = File(...)):
         os.makedirs("data", exist_ok=True)
         file_path = os.path.join("data", file.filename)
         
-        # Save the uploaded file locally
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        # 1. Parse and extract text from the PDF using PyPDFLoader
         raw_docs = load_pdf(file_path)
-        
-        # 2. Chunk text using RecursiveCharacterTextSplitter
         split_docs = split_documents(raw_docs)
-        
-        # 3. Embed text chunks and save to Chroma Vector DB
         add_documents_to_store(split_docs)
         
         return {
@@ -188,6 +167,8 @@ async def upload_endpoint(file: UploadFile = File(...)):
             "chunks": len(split_docs)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         return {
             "status": "error",
@@ -199,10 +180,8 @@ class ClearRequest(BaseModel):
 
 # 10. API Endpoint: Reset Chat Thread (Clear History)
 @app.post("/api/clear")
-async def clear_endpoint(req: ClearRequest = None):
-    # If using global session, we would reset it here
-    # However, since we're using client-side thread IDs now, history is effectively cleared 
-    # simply by the client generating a new one next time they refresh. 
-    # For now, we can still reset the global session as a fallback.
-    session.reset()
+async def clear_endpoint(req: ClearRequest = None, user: dict = Depends(get_current_user)):
+    # Because the checkpoint is now persistent in MongoDB, we could manually delete the documents 
+    # from the 'checkpoints' and 'checkpoints_writes' collections here, but a cleaner 
+    # approach is to just let the client start fresh with a new thread_id.
     return {"status": "success", "message": "Conversation history cleared."}
