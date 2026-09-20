@@ -16,3 +16,6 @@ graph_app = create_workflow(checkpointer=mongodb_saver)
 
 def get_graph_app():
     return graph_app
+
+def get_db():
+    return _mongo_client["startup_ai"]

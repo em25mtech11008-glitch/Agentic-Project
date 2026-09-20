@@ -10,24 +10,15 @@ import os
 from dotenv import load_dotenv
 
 from app.auth.middleware import require_permission
+from app.dependencies import get_db
 
 load_dotenv(override=True)
 
 router = APIRouter(prefix="/api/operations", tags=["Operations"])
 
-_mongo_client = None
-
-def _get_db():
-    global _mongo_client
-    if _mongo_client is None:
-        uri = os.getenv("MONGODB_URI")
-        _mongo_client = AsyncIOMotorClient(uri)
-    return _mongo_client["startup_ai"]
-
 
 @router.get("/tasks")
-async def list_tasks(user: dict = Depends(require_permission("operations.view"))):
-    db = _get_db()
+async def list_tasks(user: dict = Depends(require_permission("operations.view")), db = Depends(get_db)):
     org_id = user["org"]
     
     cursor = db.tasks.find({"organization_id": org_id}).limit(100)

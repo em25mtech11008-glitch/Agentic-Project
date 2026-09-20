@@ -14,27 +14,18 @@ import os
 from dotenv import load_dotenv
 
 from app.auth.middleware import require_permission
+from app.dependencies import get_db
 
 load_dotenv(override=True)
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
-_mongo_client = None
-
-def _get_db():
-    global _mongo_client
-    if _mongo_client is None:
-        uri = os.getenv("MONGODB_URI")
-        _mongo_client = AsyncIOMotorClient(uri)
-    return _mongo_client["startup_ai"]
-
 
 @router.get("/")
-async def get_dashboard(user: dict = Depends(require_permission("dashboard.view"))):
+async def get_dashboard(user: dict = Depends(require_permission("dashboard.view")), db = Depends(get_db)):
     """
     Returns high-level statistics for the dashboard.
     """
-    db = _get_db()
     org_id = user["org"]
     
     # Very basic metrics for demo

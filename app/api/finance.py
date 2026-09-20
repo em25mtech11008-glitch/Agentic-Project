@@ -10,24 +10,15 @@ import os
 from dotenv import load_dotenv
 
 from app.auth.middleware import require_permission
+from app.dependencies import get_db
 
 load_dotenv(override=True)
 
 router = APIRouter(prefix="/api/finance", tags=["Finance"])
 
-_mongo_client = None
-
-def _get_db():
-    global _mongo_client
-    if _mongo_client is None:
-        uri = os.getenv("MONGODB_URI")
-        _mongo_client = AsyncIOMotorClient(uri)
-    return _mongo_client["startup_ai"]
-
 
 @router.get("/invoices")
-async def list_invoices(user: dict = Depends(require_permission("finance.view"))):
-    db = _get_db()
+async def list_invoices(user: dict = Depends(require_permission("finance.view")), db = Depends(get_db)):
     org_id = user["org"]
     
     cursor = db.invoices.find({"organization_id": org_id}).limit(100)
@@ -42,8 +33,7 @@ async def list_invoices(user: dict = Depends(require_permission("finance.view"))
 
 
 @router.get("/expenses")
-async def list_expenses(user: dict = Depends(require_permission("finance.view"))):
-    db = _get_db()
+async def list_expenses(user: dict = Depends(require_permission("finance.view")), db = Depends(get_db)):
     org_id = user["org"]
     
     cursor = db.expenses.find({"organization_id": org_id}).limit(100)

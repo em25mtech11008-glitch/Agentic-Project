@@ -105,8 +105,15 @@ async def tools_node(state) -> dict:
         if tool_name in mcp_tools_map:
             tool_obj = mcp_tools_map[tool_name]
             try:
-                result = await tool_obj.ainvoke(tool_args)
+                raw_result = await tool_obj.ainvoke(tool_args)
                 logger.debug(f"Tool {tool_name} returned successfully.")
+                
+                # LangChain MCP adapters return a list of dicts. We need to extract the raw text
+                # so the LLM doesn't get confused by the nested structure.
+                if isinstance(raw_result, list):
+                    result = "".join([item.get("text", "") for item in raw_result if isinstance(item, dict) and item.get("type") == "text"])
+                else:
+                    result = str(raw_result)
             except Exception as e:
                 result = f"Error executing tool: {str(e)}"
                 logger.error(result)

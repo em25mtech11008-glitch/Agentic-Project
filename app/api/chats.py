@@ -3,16 +3,8 @@
 CHAT HISTORY ROUTES — Manage Chat Sessions & Messages
 ==================================================
 
-Educational Comment:
-This module manages the persistent chat history for users in MongoDB.
-It ensures that users can only access chats belonging to their own user ID
-and organization ID.
-
-WHY THIS IS IMPORTANT:
-- Stateless LLM invocations require full conversation history to maintain context.
-- Storing chats in MongoDB allows users to resume conversations later, from any device.
-- We enforce strict RBAC and data isolation at the query level (`user_id`, `organization_id`)
-  so a user can never accidentally (or maliciously) fetch another user's chat.
+Manages persistent chat history in MongoDB.
+Enforces multi-tenant RBAC by filtering queries on `user_id` and `organization_id`.
 """
 
 import os
@@ -25,22 +17,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
 from langchain_core.messages import HumanMessage
-from app.dependencies import graph_app
+from app.dependencies import graph_app, get_db
 from app.auth.middleware import get_current_user
 
 router = APIRouter(prefix="/api/chats", tags=["Chat History"])
-
-# ==================================================
-# MONGODB CONNECTION
-# ==================================================
-_mongo_client = None
-
-def _get_db():
-    global _mongo_client
-    if _mongo_client is None:
-        uri = os.getenv("MONGODB_URI")
-        _mongo_client = AsyncIOMotorClient(uri)
-    return _mongo_client["startup_ai"]
 
 
 # ==================================================
@@ -76,15 +56,10 @@ class ChatDetailResponse(BaseModel):
 # CREATE CHAT
 # ==================================================
 @router.post("", response_model=ChatResponse, status_code=status.HTTP_201_CREATED)
-async def create_chat(body: ChatCreateRequest, user: dict = Depends(get_current_user)):
+async def create_chat(body: ChatCreateRequest, user: dict = Depends(get_current_user), db = Depends(get_db)):
     """
     Creates a new empty chat session for the current user.
-    
-    Educational Comment:
-    We link every chat to BOTH the user_id and organization_id directly from the
-    verified JWT payload. This eliminates the risk of Insecure Direct Object Reference (IDOR).
     """
-    db = _get_db()
     chat_id = str(uuid.uuid4())
     
     chat = {
@@ -111,16 +86,10 @@ async def create_chat(body: ChatCreateRequest, user: dict = Depends(get_current_
 # LIST CHATS
 # ==================================================
 @router.get("", response_model=List[ChatResponse])
-async def list_chats(user: dict = Depends(get_current_user)):
+async def list_chats(user: dict = Depends(get_current_user), db = Depends(get_db)):
     """
     Returns a list of all active chats for the current user.
-    
-    Educational Comment:
-    The database query inherently filters by `user_id` and `organization_id`.
-    Users cannot fetch a global list of chats.
     """
-    db = _get_db()
-    
     cursor = db.chats.find(
         {"user_id": user["user_id"], "organization_id": user["org"], "status": "ACTIVE"}
     ).sort("updated_at", -1)
@@ -141,17 +110,10 @@ async def list_chats(user: dict = Depends(get_current_user)):
 # GET CHAT (WITH MESSAGES)
 # ==================================================
 @router.get("/{chat_id}", response_model=ChatDetailResponse)
-async def get_chat(chat_id: str, user: dict = Depends(get_current_user)):
+async def get_chat(chat_id: str, user: dict = Depends(get_current_user), db = Depends(get_db)):
     """
     Retrieves a specific chat and all its messages.
-    
-    Educational Comment:
-    Notice how the database lookup mandates `user_id` and `organization_id` matching
-    the currently authenticated user. Even if someone guesses a valid `chat_id`,
-    they will get a 404 if they do not own it.
     """
-    db = _get_db()
-    
     chat = await db.chats.find_one({
         "_id": chat_id,
         "user_id": user["user_id"],
@@ -190,16 +152,10 @@ async def get_chat(chat_id: str, user: dict = Depends(get_current_user)):
 # RENAME CHAT
 # ==================================================
 @router.patch("/{chat_id}", response_model=ChatResponse)
-async def rename_chat(chat_id: str, body: ChatRenameRequest, user: dict = Depends(get_current_user)):
+async def rename_chat(chat_id: str, body: ChatRenameRequest, user: dict = Depends(get_current_user), db = Depends(get_db)):
     """
     Renames a specific chat.
-    
-    Educational Comment:
-    Similar to GET, we must verify ownership before updating. We update `updated_at`
-    so the chat bubbles up to the top of the list when renamed.
     """
-    db = _get_db()
-    
     chat = await db.chats.find_one({
         "_id": chat_id,
         "user_id": user["user_id"],
@@ -227,16 +183,10 @@ async def rename_chat(chat_id: str, body: ChatRenameRequest, user: dict = Depend
 # DELETE CHAT
 # ==================================================
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_chat(chat_id: str, user: dict = Depends(get_current_user)):
+async def delete_chat(chat_id: str, user: dict = Depends(get_current_user), db = Depends(get_db)):
     """
     Soft-deletes a chat by changing its status to ARCHIVED.
-    
-    Educational Comment:
-    We use soft-deletes (status="ARCHIVED") instead of physical deletions (`db.chats.delete_one`).
-    This is best practice for data retention, auditing, and preventing accidental data loss.
     """
-    db = _get_db()
-    
     result = await db.chats.update_one(
         {
             "_id": chat_id,
@@ -256,12 +206,10 @@ class SendMessageRequest(BaseModel):
     content: str
 
 @router.post("/{chat_id}/messages", response_model=MessageResponse)
-async def send_message(chat_id: str, body: SendMessageRequest, user: dict = Depends(get_current_user)):
+async def send_message(chat_id: str, body: SendMessageRequest, user: dict = Depends(get_current_user), db = Depends(get_db)):
     """
     Saves a user message and routes it through the LangGraph AI Operations Assistant.
     """
-    db = _get_db()
-    
     # 1. Verify chat ownership
     chat = await db.chats.find_one({
         "_id": chat_id,

@@ -1,112 +1,150 @@
-# Company AI Assistant
+<div align="center">
+  <h1>🏢 AI Operations Command Center</h1>
+  <p><strong>An Industry-Grade AI Workforce Operating System for Startups</strong></p>
 
-A full-stack, AI-powered company assistant built with **FastAPI**, **LangChain**, **LangGraph**, and the **Model Context Protocol (MCP)**. 
+  ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)
+  ![FastAPI](https://img.shields.io/badge/FastAPI-005571?logo=fastapi)
+  ![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)
+  ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)
+  ![LangChain](https://img.shields.io/badge/LangGraph-1C3C3C?logo=chainlink&logoColor=white)
+  ![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?logo=mongodb&logoColor=white)
+</div>
 
-This repository serves two purposes:
-1. A functional AI assistant featuring RAG, Tool Calling, and Web UI.
-2. A hands-on **MCP Learning Project** demonstrating how to build MCP Servers, connect MCP Clients, and integrate them into a LangGraph state machine.
+---
 
-## Features
+## 📖 Overview
 
-- **Interactive Chat Interface**: A clean, vanilla HTML/JS frontend styled with modern CSS. Conversations are isolated per-tab using unique client-side thread IDs.
-- **Google Gemini Integration**: Utilizes `gemini-3.5-flash` for the primary LLM reasoning and response generation, and `gemini-embedding-2` for text embeddings.
-- **RAG (Retrieval-Augmented Generation)**: Upload PDFs directly through the UI. The documents are chunked and ingested into a local ChromaDB vector store.
-- **Model Context Protocol (MCP)**: Implements an official MCP Server that exposes Tools (MongoDB Querying, Calculator, Weather), Resources (Config, RAG metadata), and Prompts. The LangGraph agent uses `langchain-mcp-adapters` to dynamically bind these tools over a local `stdio` transport.
-- **Multi-Agent Supervisor**: Uses LangGraph to orchestrate an AI Workforce. An "AI COO" dynamically routes tasks to 7 specialized virtual employees (Finance, Sales, HR, etc.) based on the user's business intent.
-- **Stateful Memory**: Employs LangGraph's `MemorySaver` checkpointer to maintain continuous conversation history.
-- **Dashboard Modules**: Full UI panels for each business domain:
-  - **Work Inbox**: A unified dashboard showing your active operational tasks and pending high-stakes approvals.
-  - **Approvals**: A dedicated queue for reviewing, rejecting, or approving sensitive AI actions (e.g., financial transactions).
-  - **Support**: Manage customer inquiries and low-score reviews.
-  - **Operations**: Monitor internal workflows, active tasks, and operational priorities.
-  - **HR**: Manage the company's employee directory and department structures.
-  - **Sales & Finance**: View sales pipelines, leads, overdue invoices, and expense reports.
+The **AI Operations Command Center** is a multi-agent backend architecture that provides startups with a unified, autonomous workforce. It seamlessly manages Finance, Sales, HR, Customer Support, Operations, and Knowledge Retrieval without requiring a massive human operations team.
 
-## Project Structure
+This system leverages **LangGraph** for deterministic multi-agent state orchestration and the **Model Context Protocol (MCP)** to execute secure, role-based tools across a MongoDB cluster.
 
+---
+
+## 📊 Key Metrics (Resume Ready)
+
+- **`17` API Endpoints**: Scalable FastAPI architecture covering REST CRUD, Chat, Approvals, and Uploads.
+- **`9` AI Agents**: 1 Supervisor/COO dynamically routing tasks to 8 specialized department models.
+- **`14` MCP Tools**: Context-aware tools ranging from schema discovery to human-in-the-loop action triggers.
+- **`11+` DB Collections**: Isolated multi-tenant architectures handling Customers, Invoices, Tasks, Checkpoints, etc.
+- **`3` RAG Stages**: Fully integrated pipeline for Document Loading, Text Splitting, and Vector Embeddings.
+
+---
+
+## 🏗️ System Architecture
+
+The architecture separates concerns into a clean REST API, a Stateful Agent Graph, and a secure Tool Execution layer.
+
+```mermaid
+graph TD
+    User([User / React Frontend]) -->|HTTP / REST| API[FastAPI Entry Point]
+    
+    subgraph Multi-Agent Orchestration
+    API --> Graph[LangGraph State Machine]
+    Graph --> Sup[AI COO / Supervisor]
+    Sup --> Agents[8 Specialized Agents]
+    end
+    
+    subgraph Security & Execution
+    Agents --> MCP[FastMCP Server]
+    MCP --> Tools[14 Context-Aware Tools]
+    Tools --> Engine[Action & Approval Engines]
+    end
+    
+    subgraph Data & Persistence
+    Tools --> DB[(MongoDB Cluster)]
+    Graph --> Checkpointer[(AsyncMongoDBSaver)]
+    Tools --> Vector[(RAG Vector Store)]
+    end
 ```
+
+---
+
+## 🤖 The AI Workforce
+
+| Agent | Responsibility | Core MCP Tools Used |
+|---|---|---|
+| **AI COO (Supervisor)** | Interprets intent, plans tasks, and routes to specialists. | *Routing Logic* |
+| **Finance Agent** | Revenue, expenses, cash flow, budget monitoring. | `get_revenue_summary`, `get_overdue_invoices` |
+| **Sales Agent** | Lead qualification, pipeline analysis, CRM management. | `get_sales_pipeline`, `search_customers` |
+| **Support Agent** | Ticket resolution, escalations, complaint detection. | `search_support_tickets` |
+| **Operations Agent** | Workflow bottlenecks, blocked tasks, SLA monitoring. | `get_blocked_tasks`, `get_operational_metrics` |
+| **HR Agent** | Employee requests, onboarding/offboarding, compliance. | `lookup_employee`, `get_department_summary` |
+| **Knowledge Agent** | Company policies, document retrieval (RAG). | `search_documents` |
+| **Executive Agent** | Macro-level company health dashboards for founders. | *All Tools* |
+
+---
+
+## 📂 Project Structure
+
+```text
 company-ai-assistant/
-├── .env                      # Environment variables (GEMINI_API_KEY, MONGODB_URI)
-├── .venv/                    # Python virtual environment
-├── data/                     # Directory for storing uploaded PDF files
-├── scratch/                  # Utility scripts (DB seeding, testing)
-│   └── seed_mongodb.py       # Generates synthetic enterprise data in MongoDB
 ├── app/
-│   ├── main.py               # FastAPI application and route definitions
-│   ├── graph/                # LangGraph Multi-Agent Orchestration
-│   │   ├── agents.py         # AI Workforce personas (COO + 7 specialists)
-│   │   ├── nodes.py          # Graph nodes (Supervisor, Worker, Tools)
-│   │   ├── state.py          # State definitions for LangGraph
-│   │   └── workflow.py       # State machine compilation
-│   ├── models/
-│   │   └── llm.py            # ChatGoogleGenerativeAI model initialization
-│   ├── mcp/                  # Model Context Protocol Implementation
-│   │   ├── server.py         # FastMCP Server (central tool registry)
-│   │   ├── client.py         # MCP Client session utility
-│   │   ├── mongodb_tools.py  # Raw MongoDB query tools (schema + find)
-│   │   ├── enterprise_tools.py # Specialized agent tools (Finance, Sales, HR, Ops, etc.)
-│   │   ├── tools.py          # General-purpose MCP Tools
-│   │   ├── resources.py      # MCP Resources
-│   │   └── prompts.py        # MCP Prompts
-│   ├── rag/                  # RAG components
-│   │   ├── embeddings.py     # Gemini embeddings configuration
-│   │   ├── loader.py         # PDF parsing and document loading
-│   │   ├── splitter.py       # Text chunking logic
-│   │   └── vectorstore.py    # ChromaDB integration
-│   ├── tools/                # Native backend logic (wrapped by MCP)
-│   │   ├── calculator.py     # Math operations
-│   │   └── weather.py        # Weather lookup
-│   └── static/               # Frontend assets
-│       ├── index.html        # Main UI
-│       └── style.css         # UI Styling
-├── docs/mcp/                 # 📚 Comprehensive MCP Learning Hub
-├── META-SKILLS.md            # Required skills for developers
-└── Rule.md                   # Development guidelines and rules
+│   ├── main.py                 # Minimal FastAPI entry point & Router registration
+│   ├── dependencies.py         # Global MongoDB & LangGraph Dependency Injection
+│   ├── api/                    # RESTful Endpoints (Chats, Approvals, Resources)
+│   ├── auth/                   # JWT Middleware & RBAC Security
+│   ├── engines/                # Action & Approval Engines (Human-in-the-loop)
+│   ├── graph/                  # LangGraph State Machine
+│   │   ├── agents.py           # Specialized agent prompts & Personas
+│   │   └── workflow.py         # Graph compilation & routing logic
+│   ├── mcp/                    # Model Context Protocol
+│   │   ├── server.py           # FastMCP Server definition
+│   │   └── tools.py            # 14 Secure Tool implementations
+│   ├── prompts/                # Modular prompt definitions
+│   └── rag/                    # Retrieval-Augmented Generation pipeline
+└── frontend/                   # React / TypeScript Application
 ```
 
-## Setup & Installation
+---
 
-1. **Virtual Environment**: Ensure your virtual environment is set up and activated.
-   ```bash
-   cd company-ai-assistant
-   python -m venv .venv
-   .\.venv\Scripts\activate
-   ```
+## 🔄 Core Execution Workflows
 
-2. **Dependencies**: Make sure required packages are installed. You will need libraries such as `fastapi`, `uvicorn`, `langchain`, `langchain-google-genai`, `langgraph`, `chromadb`, `pypdf`, `python-dotenv`, `mcp`, `langchain-mcp-adapters`, `motor`, and `pymongo`.
+### 1. Multi-Agent Reasoning Flow
+When a user sends a message, it is validated via JWT and passed to `app.graph.workflow`. The **Supervisor Node** analyzes the request and routes it. The target **Worker Node** invokes the LLM with its specialized prompt, executes tools securely via MCP, and returns the response. Finally, `AsyncMongoDBSaver` persists the exact state graph to MongoDB for perfect conversational memory.
 
-3. **Environment Configuration**: Create or edit the `.env` file in the project root to include your Gemini API key and MongoDB Atlas URI:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
-   MONGODB_URI=mongodb+srv://<user>:<password>@cluster0.mongodb.net/?retryWrites=true&w=majority
-   ```
+### 2. High-Stakes Action Flow (Human-in-the-Loop)
+If an agent needs to perform an irreversible action (e.g., *Refund Customer*), it calls the `trigger_high_stakes_action` tool. The `ActionEngine` intercepts this, creates a `"PENDING"` record, and informs the user. A Human Manager can log into the dashboard and click "Approve", which triggers the `ApprovalEngine` to execute the logic and update the Audit Log.
 
-4. **Seed Database (Optional)**: If you want to populate your MongoDB with synthetic enterprise data, run the seeder script:
-   ```bash
-   .\.venv\Scripts\python scratch\seed_mongodb.py
-   ```
+### 3. Knowledge Retrieval (RAG) Flow
+Admins upload PDFs via `POST /api/upload`. The backend extracts text, splits it into semantic chunks, generates vector embeddings, and stores them in MongoDB. The Knowledge Agent uses the `search_documents` tool to query this vector space using similarity search to answer complex policy questions.
 
-## Usage
+---
 
-1. **Start the Backend Server**:
-   ```bash
-   .\.venv\Scripts\uvicorn app.main:app --reload
-   ```
+## ⚙️ Setup & Configuration
 
-2. **Access the App**:
-   Open your browser and navigate to [http://127.0.0.1:8000](http://127.0.0.1:8000).
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- MongoDB instance (Local or Atlas)
+- Google Gemini API Key
 
-3. **Interacting**:
-   - Type questions in the chat box.
-   - Upload PDF files by dragging and dropping them into the upload zone or clicking to browse.
-   - Click "Clear History" to reset the current thread.
+### 1. Environment Variables
+Create a `.env` file in the root directory:
+```env
+MONGODB_URI=mongodb://localhost:27017
+JWT_SECRET=your_super_secret_jwt_key
+GOOGLE_API_KEY=your_gemini_api_key
+```
 
-## Configuration & Customization
+### 2. Backend Setup
+```bash
+# Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
 
-- **Model Selection**: To switch models, modify `app/models/llm.py` and update the `model` parameter inside `ChatGoogleGenerativeAI`.
-- **Embedding Settings**: Embedding parameters can be configured in `app/rag/embeddings.py`.
-- **System Instructions**: You can modify the distinct personas and workflows of the 8 specialized agents inside `app/graph/agents.py`.
+# Install dependencies
+pip install -r requirements.txt
 
-## MCP Learning Resources
+# Seed the database with mock company data
+python scripts/seed_database.py
 
-If you want to learn MCP, start by reading the **[MCP Learning Roadmap](docs/mcp/README.md)**.
+# Run the FastAPI server
+uvicorn app.main:app --reload
+```
+
+### 3. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```

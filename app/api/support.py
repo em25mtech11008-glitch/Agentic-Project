@@ -10,24 +10,15 @@ import os
 from dotenv import load_dotenv
 
 from app.auth.middleware import require_permission
+from app.dependencies import get_db
 
 load_dotenv(override=True)
 
 router = APIRouter(prefix="/api/support", tags=["Support"])
 
-_mongo_client = None
-
-def _get_db():
-    global _mongo_client
-    if _mongo_client is None:
-        uri = os.getenv("MONGODB_URI")
-        _mongo_client = AsyncIOMotorClient(uri)
-    return _mongo_client["startup_ai"]
-
 
 @router.get("/tickets")
-async def list_tickets(user: dict = Depends(require_permission("support.view"))):
-    db = _get_db()
+async def list_tickets(user: dict = Depends(require_permission("support.view")), db = Depends(get_db)):
     org_id = user["org"]
     
     # In our seed data, we can treat low-scoring reviews as tickets
