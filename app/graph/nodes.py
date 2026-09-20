@@ -1,12 +1,15 @@
+import logging
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, ToolMessage, HumanMessage
 from app.mcp.client import mcp_client
 from app.models.llm import create_model
 from app.graph.agents import AGENT_PROMPTS, SUPERVISOR_PROMPT
 
+logger = logging.getLogger(__name__)
+
 class RouterDecision(BaseModel):
     destination: str = Field(
-        description="The exact name of the agent to route to (e.g., 'finance_agent', 'sales_agent', 'support_agent', 'operations_agent', 'hr_agent', 'knowledge_agent', 'executive_agent', 'general_agent'), or 'FINISH' if the task is fully complete."
+        description="The exact name of the agent to route to, or 'FINISH' if the task is fully complete."
     )
 
 async def supervisor_node(state) -> dict:
@@ -15,20 +18,17 @@ async def supervisor_node(state) -> dict:
     should execute next, or if the process should terminate.
     """
     messages = state["messages"]
-    print("\n[AI COO] Analyzing request and planning delegation...")
+    logger.info("Analyzing request and planning delegation...")
     
-    # We use a structured model to force the output to be exactly our schema
     classifier_model = create_model().with_structured_output(RouterDecision)
-    
-    # Build prompt for the supervisor
     full_messages = [SystemMessage(content=SUPERVISOR_PROMPT)] + list(messages)
     
     try:
         decision = await classifier_model.ainvoke(full_messages)
         next_agent = decision.destination
-        print(f"[AI COO] Delegating task to: {next_agent}")
+        logger.info(f"Delegating task to: {next_agent}")
     except Exception as e:
-        print(f"[AI COO Error] Routing failed. Defaulting to FINISH. Details: {str(e)}")
+        logger.error(f"Routing failed. Defaulting to FINISH. Details: {str(e)}")
         next_agent = "FINISH"
         from langchain_core.messages import AIMessage
         return {"next_agent": next_agent, "messages": [AIMessage(content=f"AI COO Error: {str(e)}")]}
@@ -42,19 +42,14 @@ async def worker_node(state) -> dict:
     messages = state["messages"]
     agent_name = state.get("next_agent", "FINISH")
     
-    # If for some reason we are here but agent is FINISH, just do nothing
     if agent_name not in AGENT_PROMPTS:
         return {}
         
-    print(f"\n[{agent_name.upper()}] Processing task...")
+    logger.info(f"Agent '{agent_name}' processing task...")
     
-    # Load the specific system prompt for this agent
     system_text = AGENT_PROMPTS[agent_name]
-    
-    # Build full prompt
     full_messages = [SystemMessage(content=system_text)] + list(messages)
     
-    # Connect to the MCP Server, fetch tools, bind to model, and invoke
     mcp_tools = await mcp_client.get_tools()
     model_with_tools = create_model(tools=mcp_tools)
     
@@ -62,7 +57,7 @@ async def worker_node(state) -> dict:
         response = await model_with_tools.ainvoke(full_messages)
         return {"messages": [response]}
     except Exception as e:
-        print(f"[Worker Error] Execution failed: {str(e)}")
+        logger.error(f"Execution failed for {agent_name}: {str(e)}")
         from langchain_core.messages import AIMessage
         return {"messages": [AIMessage(content=f"Worker Error ({agent_name}): {str(e)}")]}
 
@@ -73,12 +68,10 @@ def should_continue(state) -> str:
     messages = state["messages"]
     last_message = messages[-1]
     
-    # If the LLM returned tool calls, go to the tools node
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        print(f"\n[Worker] LLM requested {len(last_message.tool_calls)} tool call(s). Routing to tools node...")
+        logger.info(f"LLM requested {len(last_message.tool_calls)} tool call(s). Routing to tools node...")
         return "tools"
     
-    # Otherwise, the worker has provided a final answer to the user.
     return "end"
 
 def supervisor_router(state) -> str:
@@ -99,7 +92,6 @@ async def tools_node(state) -> dict:
     
     tool_messages = []
     
-    # Fetch tools from the MCP Server to execute them
     mcp_tools = await mcp_client.get_tools()
     mcp_tools_map = {tool.name: tool for tool in mcp_tools}
     
@@ -108,21 +100,20 @@ async def tools_node(state) -> dict:
         tool_args = tool_call["args"]
         tool_id = tool_call["id"]
         
-        print(f"\n[MCP Tools] Executing: {tool_name} with arguments: {tool_args}...")
+        logger.info(f"Executing tool: {tool_name}")
         
         if tool_name in mcp_tools_map:
             tool_obj = mcp_tools_map[tool_name]
             try:
                 result = await tool_obj.ainvoke(tool_args)
-                print(f"[MCP Tools] {tool_name} returned: {result}")
+                logger.debug(f"Tool {tool_name} returned successfully.")
             except Exception as e:
                 result = f"Error executing tool: {str(e)}"
-                print(f"[MCP Tools Error] {result}")
+                logger.error(result)
         else:
             result = f"Error: Tool '{tool_name}' not found on MCP Server."
-            print(f"[MCP Tools Error] {result}")
+            logger.error(result)
             
-        # Create the matching ToolMessage response
         tool_messages.append(
             ToolMessage(content=str(result), tool_call_id=tool_id)
         )

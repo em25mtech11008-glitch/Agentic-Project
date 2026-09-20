@@ -3,30 +3,13 @@
 AI WORKFORCE OPERATING SYSTEM — AGENT PERSONAS
 ==================================================
 
-Educational Comment:
 This module contains the complete System Prompts for every specialized agent
-in the AI Workforce Operating System. Each prompt is derived from the company's
-operational constitution and gives the agent a singular focus.
-
-WHY separate prompts per agent?
-- Reduces hallucination: A Finance Agent won't accidentally discuss HR policies.
-- Improves tool selection: Each agent knows exactly which tools are relevant.
-- Enables auditability: We can trace which agent made which decision.
-
-HOW it works with LangGraph:
-The Supervisor (AI COO) reads the user's message and decides which agent_name
-to route to. The worker_node in nodes.py looks up AGENT_PROMPTS[agent_name]
-and injects it as the SystemMessage before invoking the LLM.
+in the AI Workforce Operating System.
 """
 
 # ==================================================
 # 1. AI COO / SUPERVISOR
 # ==================================================
-# Educational Comment:
-# The Supervisor is the brain of the system. It never answers the user directly.
-# Instead, it classifies the user's intent and returns the exact name of the
-# specialist agent that should handle the request. This is the "router" pattern
-# in multi-agent orchestration.
 
 SUPERVISOR_PROMPT = """You are the AI COO (Supervisor) of an AI Workforce Operating System for startups.
 
@@ -78,10 +61,6 @@ Respond with ONLY the exact agent name string or "FINISH". Nothing else.
 # ==================================================
 # 2. FINANCE AGENT
 # ==================================================
-# Educational Comment:
-# The Finance Agent is one of the most critical agents. It has direct access
-# to MongoDB collections like invoices, payments, expenses, and orders.
-# It must NEVER fabricate financial numbers — it must always query the database.
 
 FINANCE_PROMPT = """You are the Finance Agent of an AI Workforce Operating System.
 
@@ -128,10 +107,6 @@ APPROVAL REQUIRED: [Any actions needing human sign-off]
 # ==================================================
 # 3. SALES AGENT
 # ==================================================
-# Educational Comment:
-# The Sales Agent manages the customer relationship pipeline. It queries
-# the customers, orders, and payments collections to understand deal health
-# and identify opportunities or risks.
 
 SALES_PROMPT = """You are the Sales Agent of an AI Workforce Operating System.
 
@@ -179,10 +154,6 @@ APPROVAL REQUIRED: [Any external communications needing sign-off]
 # ==================================================
 # 4. CUSTOMER SUPPORT AGENT
 # ==================================================
-# Educational Comment:
-# The Support Agent connects customer complaints (reviews collection)
-# to their order history and payment records. It prioritizes issues
-# using the P0-P3 severity system.
 
 SUPPORT_PROMPT = """You are the Customer Support Agent of an AI Workforce Operating System.
 
@@ -226,11 +197,6 @@ APPROVAL REQUIRED: [Refunds, credits, or external communications]
 # ==================================================
 # 5. OPERATIONS AGENT
 # ==================================================
-# Educational Comment:
-# The Operations Agent is the workflow automation specialist. It monitors
-# the 'tasks' collection for blocked/overdue items and the 'orders' collection
-# for fulfillment bottlenecks. Its goal is not just to report problems
-# but to try to resolve them.
 
 OPERATIONS_PROMPT = """You are the Operations Agent of an AI Workforce Operating System.
 
@@ -270,10 +236,6 @@ NEXT STEP: [Most impactful next action]
 # ==================================================
 # 6. HR AGENT
 # ==================================================
-# Educational Comment:
-# The HR Agent manages the 'employees' collection. Privacy is critical here —
-# salary data and personal information must never be exposed to unauthorized
-# users. The agent also handles onboarding checklists and leave tracking.
 
 HR_PROMPT = """You are the HR Agent of an AI Workforce Operating System.
 
@@ -315,10 +277,6 @@ APPROVAL REQUIRED: [Any sensitive actions needing authorization]
 # ==================================================
 # 7. KNOWLEDGE AGENT
 # ==================================================
-# Educational Comment:
-# The Knowledge Agent is the company's institutional memory. It uses the
-# RAG vector store (ChromaDB) to search uploaded company documents and
-# the search_documents MCP tool. It prioritizes authoritative, recent docs.
 
 KNOWLEDGE_PROMPT = """You are the Knowledge Agent of an AI Workforce Operating System.
 
@@ -364,11 +322,6 @@ GAPS: [Any information that could not be found]
 # ==================================================
 # 8. EXECUTIVE INTELLIGENCE AGENT
 # ==================================================
-# Educational Comment:
-# The Executive Agent is unique — it doesn't query the database directly for
-# narrow questions. Instead, it synthesizes information from ALL collections
-# to build a "company health dashboard." It uses every available tool to
-# provide founders with the big picture.
 
 EXECUTIVE_PROMPT = """You are the Executive Intelligence Agent of an AI Workforce Operating System.
 
@@ -436,10 +389,6 @@ TEAM:
 # ==================================================
 # AGENT REGISTRY
 # ==================================================
-# Educational Comment:
-# This dictionary is the central registry. The worker_node in nodes.py
-# uses this to dynamically load the correct persona at runtime.
-# Adding a new agent is as simple as adding a new key-value pair here.
 
 ACTION_SUFFIX = """
 ==== ACTION GENERATION ====

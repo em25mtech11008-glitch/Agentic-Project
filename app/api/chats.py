@@ -25,16 +25,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
 from langchain_core.messages import HumanMessage
-from langgraph.checkpoint.memory import MemorySaver
-from app.graph.workflow import create_workflow
-
+from app.dependencies import graph_app
 from app.auth.middleware import get_current_user
-
-load_dotenv(override=True)
-
-# Initialize LangGraph with MemorySaver
-memory_saver = MemorySaver()
-graph_app = create_workflow(checkpointer=memory_saver)
 
 router = APIRouter(prefix="/api/chats", tags=["Chat History"])
 
@@ -316,7 +308,7 @@ async def send_message(chat_id: str, body: SendMessageRequest, user: dict = Depe
         raise HTTPException(status_code=500, detail="AI Workflow encountered an error")
 
     # Retrieve final state
-    final_state = graph_app.get_state(config)
+    final_state = await graph_app.aget_state(config)
     final_messages = final_state.values.get("messages", [])
     
     if not final_messages:
