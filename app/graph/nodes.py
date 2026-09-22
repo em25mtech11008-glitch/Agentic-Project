@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, ToolMessage, HumanMessage
 from app.mcp.client import mcp_client
@@ -90,12 +91,10 @@ async def tools_node(state) -> dict:
     messages = state["messages"]
     last_message = messages[-1]
     
-    tool_messages = []
-    
     mcp_tools = await mcp_client.get_tools()
     mcp_tools_map = {tool.name: tool for tool in mcp_tools}
     
-    for tool_call in last_message.tool_calls:
+    async def execute_single_tool(tool_call):
         tool_name = tool_call["name"]
         tool_args = tool_call["args"]
         tool_id = tool_call["id"]
@@ -121,8 +120,8 @@ async def tools_node(state) -> dict:
             result = f"Error: Tool '{tool_name}' not found on MCP Server."
             logger.error(result)
             
-        tool_messages.append(
-            ToolMessage(content=str(result), tool_call_id=tool_id)
-        )
-        
-    return {"messages": tool_messages}
+        return ToolMessage(content=str(result), tool_call_id=tool_id)
+
+    tool_messages = await asyncio.gather(*(execute_single_tool(tc) for tc in last_message.tool_calls))
+    
+    return {"messages": list(tool_messages)}
